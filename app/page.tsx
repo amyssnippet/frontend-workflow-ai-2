@@ -78,14 +78,14 @@ export default function Home() {
     setEdges((prev) => prev.filter((edge) => !(edge.source === sourceId && edge.target === targetId)))
   }, [])
 
-  const handleCommand = async (command: string) => {
+  const handleCommand = async (command: string, contentType?: string) => {
     try {
-      const response = await fetch("/api/ollama", {
+      const response = await fetch("/api/mermaid-ai", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ command }),
+        body: JSON.stringify({ command, contentType: contentType || "general" }),
       })
 
       const data = await response.json()
@@ -105,8 +105,81 @@ export default function Home() {
     }
   }
 
+  const handleContentUpload = async (content: string, contentType: string) => {
+    try {
+      const response = await fetch("/api/mermaid-ai", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ content, contentType }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to process content")
+      }
+
+      if (data.success && data.mermaidDiagram) {
+        // Parse the mermaid diagram and convert to nodes/edges
+        parseMermaidToNodesAndEdges(data.mermaidDiagram)
+      }
+    } catch (error) {
+      console.error("Error processing content:", error)
+      alert(`Error: ${error instanceof Error ? error.message : "Unknown error"}`)
+    }
+  }
+
+  const parseMermaidToNodesAndEdges = (mermaidSyntax: string) => {
+    const lines = mermaidSyntax
+      .split("\n")
+      .filter((line) => line.trim() && !line.includes("classDef") && !line.includes("class "))
+    const newNodes: MermaidNode[] = []
+    const newEdges: MermaidEdge[] = []
+
+    lines.forEach((line) => {
+      const trimmedLine = line.trim()
+
+      // Parse node definitions
+      if (trimmedLine.includes("[") || trimmedLine.includes("(") || trimmedLine.includes("{")) {
+        const nodeMatch = trimmedLine.match(/(\w+)[[$${]([^[\]($${}]+)[\])}]/)
+        if (nodeMatch) {
+          const [, id, label] = nodeMatch
+          let type: "start" | "end" | "process" | "decision" = "process"
+
+          if (trimmedLine.includes("([") || trimmedLine.includes('(["')) {
+            type = label.toLowerCase().includes("start") ? "start" : "end"
+          } else if (trimmedLine.includes("{")) {
+            type = "decision"
+          }
+
+          newNodes.push({ id, label: label.replace(/"/g, ""), type })
+        }
+      }
+
+      // Parse edge definitions
+      if (trimmedLine.includes("-->")) {
+        const edgeMatch = trimmedLine.match(/(\w+)\s*-->\s*(\w+)/)
+        if (edgeMatch) {
+          const [, source, target] = edgeMatch
+          newEdges.push({
+            id: `${source}-${target}`,
+            source,
+            target,
+          })
+        }
+      }
+    })
+
+    if (newNodes.length > 0) {
+      setNodes(newNodes)
+      setEdges(newEdges)
+    }
+  }
+
   const applyCommand = (command: any) => {
-    console.log("Applying command:", command)
+    console.log("[v0] Applying command:", command)
 
     switch (command.action) {
       case "addNode":
@@ -126,6 +199,11 @@ export default function Home() {
         break
       case "removeConnection":
         removeConnection(command.sourceId, command.targetId)
+        break
+      case "generateDiagram":
+        if (command.mermaidSyntax) {
+          parseMermaidToNodesAndEdges(command.mermaidSyntax)
+        }
         break
       default:
         console.warn("Unknown command action:", command.action)
@@ -160,7 +238,7 @@ export default function Home() {
         </div>
 
         <div className="w-96 bg-white/90 backdrop-blur-sm border-l border-slate-200/50 shadow-xl">
-          <CommandInput onSubmit={handleCommand} />
+          <CommandInput onSubmit={handleCommand} onContentUpload={handleContentUpload} />
         </div>
       </div>
     </div>

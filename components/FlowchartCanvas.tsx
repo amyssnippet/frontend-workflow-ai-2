@@ -44,6 +44,7 @@ export default function FlowchartCanvas({ nodes, edges }: FlowchartCanvasProps) 
   useEffect(() => {
     if (mermaidRef.current && nodes.length > 0) {
       const mermaidSyntax = generateMermaidSyntax(nodes, edges)
+      console.log("[v0] Generated Mermaid syntax:", mermaidSyntax)
 
       // Clear previous content
       mermaidRef.current.innerHTML = ""
@@ -73,47 +74,50 @@ export default function FlowchartCanvas({ nodes, edges }: FlowchartCanvasProps) 
 
     nodes.forEach((node) => {
       let nodeShape = ""
+      // Escape special characters and ensure proper formatting
+      const safeLabel = node.label.replace(/[[\]{}()]/g, "").trim()
+
       switch (node.type) {
         case "start":
-          nodeShape = `${node.id}([${node.label}])`
+          nodeShape = `${node.id}(["${safeLabel}"])`
           break
         case "end":
-          nodeShape = `${node.id}([${node.label}])`
+          nodeShape = `${node.id}(["${safeLabel}"])`
           break
         case "decision":
-          nodeShape = `${node.id}{${node.label}}`
+          nodeShape = `${node.id}{"${safeLabel}"}`
           break
         case "process":
         default:
-          nodeShape = `${node.id}[${node.label}]`
+          nodeShape = `${node.id}["${safeLabel}"]`
           break
       }
       syntax += `    ${nodeShape}\n`
     })
 
+    // Add connections
     edges.forEach((edge) => {
-      const label = edge.label ? `|${edge.label}|` : ""
+      const label = edge.label ? `|"${edge.label}"|` : ""
       syntax += `    ${edge.source} -->${label} ${edge.target}\n`
     })
 
-    syntax += `
-    classDef startEnd fill:#e1f5fe,stroke:#0277bd,stroke-width:2px,color:#000
-    classDef process fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#000
-    classDef decision fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,color:#000
-    
-    class ${nodes
-      .filter((n) => n.type === "start" || n.type === "end")
-      .map((n) => n.id)
-      .join(",")} startEnd
-    class ${nodes
-      .filter((n) => n.type === "process" || !n.type)
-      .map((n) => n.id)
-      .join(",")} process
-    class ${nodes
-      .filter((n) => n.type === "decision")
-      .map((n) => n.id)
-      .join(",")} decision
-    `
+    const startEndNodes = nodes.filter((n) => n.type === "start" || n.type === "end").map((n) => n.id)
+    const processNodes = nodes.filter((n) => n.type === "process" || !n.type).map((n) => n.id)
+    const decisionNodes = nodes.filter((n) => n.type === "decision").map((n) => n.id)
+
+    syntax += `\n    classDef startEnd fill:#e1f5fe,stroke:#0277bd,stroke-width:2px,color:#000\n`
+    syntax += `    classDef process fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#000\n`
+    syntax += `    classDef decision fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,color:#000\n`
+
+    if (startEndNodes.length > 0) {
+      syntax += `    class ${startEndNodes.join(",")} startEnd\n`
+    }
+    if (processNodes.length > 0) {
+      syntax += `    class ${processNodes.join(",")} process\n`
+    }
+    if (decisionNodes.length > 0) {
+      syntax += `    class ${decisionNodes.join(",")} decision\n`
+    }
 
     return syntax
   }
