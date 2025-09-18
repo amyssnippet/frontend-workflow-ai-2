@@ -5,28 +5,39 @@ import FlowchartCanvas from "@/components/FlowchartCanvas"
 import CommandInput from "@/components/CommandInput"
 import { Workflow, Sparkles } from "lucide-react"
 
+interface MermaidNode {
+  id: string
+  label: string
+  type?: "start" | "end" | "process" | "decision"
+}
+
+interface MermaidEdge {
+  id: string
+  source: string
+  target: string
+  label?: string
+}
+
 export default function Home() {
-  const [nodes, setNodes] = useState([
+  const [nodes, setNodes] = useState<MermaidNode[]>([
     {
       id: "start",
-      type: "input",
-      position: { x: 100, y: 100 },
-      data: { label: "Start" },
+      label: "Start",
+      type: "start",
     },
     {
       id: "process1",
-      position: { x: 300, y: 100 },
-      data: { label: "Process 1" },
+      label: "Process 1",
+      type: "process",
     },
     {
       id: "end",
-      type: "output",
-      position: { x: 500, y: 100 },
-      data: { label: "End" },
+      label: "End",
+      type: "end",
     },
   ])
 
-  const [edges, setEdges] = useState([
+  const [edges, setEdges] = useState<MermaidEdge[]>([
     {
       id: "start-process1",
       source: "start",
@@ -39,20 +50,21 @@ export default function Home() {
     },
   ])
 
-  const addNode = useCallback((id: string, options: { text: string }) => {
-    const newNode = {
+  const addNode = useCallback((id: string, options: { text: string; type?: string }) => {
+    const newNode: MermaidNode = {
       id,
-      position: { x: Math.random() * 400 + 100, y: Math.random() * 300 + 100 },
-      data: { label: options.text },
+      label: options.text,
+      type: (options.type as "start" | "end" | "process" | "decision") || "process",
     }
     setNodes((prev) => [...prev, newNode])
   }, [])
 
-  const addConnection = useCallback((sourceId: string, targetId: string) => {
-    const newEdge = {
+  const addConnection = useCallback((sourceId: string, targetId: string, label?: string) => {
+    const newEdge: MermaidEdge = {
       id: `${sourceId}-${targetId}`,
       source: sourceId,
       target: targetId,
+      label,
     }
     setEdges((prev) => [...prev, newEdge])
   }, [])
@@ -98,19 +110,19 @@ export default function Home() {
 
     switch (command.action) {
       case "addNode":
-        addNode(command.id, { text: command.text })
+        addNode(command.id, { text: command.text, type: command.type })
         if (command.connectFrom) {
-          addConnection(command.connectFrom, command.id)
+          addConnection(command.connectFrom, command.id, command.connectionLabel)
         }
         if (command.connectTo) {
-          addConnection(command.id, command.connectTo)
+          addConnection(command.id, command.connectTo, command.connectionLabel)
         }
         break
       case "removeNode":
         removeNode(command.id)
         break
       case "addConnection":
-        addConnection(command.sourceId, command.targetId)
+        addConnection(command.sourceId, command.targetId, command.label)
         break
       case "removeConnection":
         removeConnection(command.sourceId, command.targetId)
