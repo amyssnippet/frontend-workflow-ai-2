@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+/* React Flow styles */
+@import "@xyflow/react/dist/style.css";
+
+@theme inline {
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans",
+    sans-serif;
+
+  /* Added semantic design tokens for enhanced visual design */
+  --background: #ffffff;
+  --foreground: #4b5563;
+  --card: #f9fafb;
+  --card-foreground: #4b5563;
+  --popover: #ffffff;
+  --popover-foreground: #4b5563;
+  --primary: #0891b2;
+  --primary-foreground: #ffffff;
+  --secondary: #10b981;
+  --secondary-foreground: #ffffff;
+  --muted: #f9fafb;
+  --muted-foreground: #4b5563;
+  --accent: #10b981;
+  --accent-foreground: #ffffff;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e5e7eb;
+  --input: #f9fafb;
+  --ring: #0891b2;
+  --radius: 0.5rem;
+  --sidebar: #f9fafb;
+  --sidebar-foreground: #4b5563;
+  --sidebar-primary: #0891b2;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #10b981;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #e5e7eb;
+  --sidebar-ring: #0891b2;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+/* Enhanced React Flow node styles with new color scheme */
+.react-flow__node {
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  background: var(--background);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  transition: all 0.2s ease;
+}
+
+.react-flow__node:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
+}
+
+.react-flow__node.selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.1);
+}
+
+.react-flow__edge {
+  stroke: var(--muted-foreground);
+  stroke-width: 2;
+}
+
+.react-flow__edge.selected {
+  stroke: var(--primary);
+}
+
+.react-flow__handle {
+  background: var(--muted-foreground);
+  border: 2px solid var(--background);
+  width: 8px;
+  height: 8px;
+}
+
+.react-flow__handle.connectable {
+  background: var(--primary);
+}
+
+/* Added gradient background for visual interest */
+.gradient-bg {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+}
+
+/* Added upload zone styles */
+.upload-zone {
+  border: 2px dashed var(--border);
+  transition: all 0.3s ease;
+}
+
+.upload-zone:hover {
+  border-color: var(--primary);
+  background-color: rgba(8, 145, 178, 0.05);
+}
+
+.upload-zone.drag-over {
+  border-color: var(--primary);
+  background-color: rgba(8, 145, 178, 0.1);
+}
