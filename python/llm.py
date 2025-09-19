@@ -6,7 +6,7 @@ import re
 
 # --- Configuration ---
 OLLAMA_API_URL = "http://localhost:11434/api/chat"
-OLLAMA_MODEL = "granite3.3" # Ensure you have pulled this model with 'ollama pull granite3.3'
+OLLAMA_MODEL = "granite3.3:8b" # Ensure you have pulled this model with 'ollama pull granite3.3'
 
 def check_mmdc_installed():
     """
