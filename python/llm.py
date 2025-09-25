@@ -32,7 +32,7 @@ OLLAMA_MODEL = "granite3.3:8b"
 def check_mmdc_installed():
     try:
         if os.name == "nt":  # Windows
-            mmdc_path = r"C:\Users\OS6069\AppData\Roaming\npm\mmdc.cmd"
+            mmdc_path = r"C:\Users\amoly\AppData\Roaming\npm\mmdc.cmd"
         else:  # Linux/Mac
             mmdc_path = r"/usr/bin/mmdc"
         subprocess.run([mmdc_path, "--version"], check=True)
@@ -95,12 +95,26 @@ def sanitize_mermaid_code(mermaid_code: str) -> str:
 
 
 def call_ollama_granite(user_prompt):
+    # system_message_content = (
+    #     "You are ONLY to output a valid Mermaid flowchart code block. "
+    #     "The output MUST be ONLY the Mermaid code block. "
+    #     "It MUST begin with '```mermaid' and end with '```'. "
+    #     "Do not include explanations."
+    # )
     system_message_content = (
-        "You are ONLY to output a valid Mermaid flowchart code block. "
-        "The output MUST be ONLY the Mermaid code block. "
-        "It MUST begin with '```mermaid' and end with '```'. "
-        "Do not include explanations."
-    )
+    "You are ONLY to output a valid Mermaid flowchart code block. "
+    "The output MUST be ONLY the Mermaid code block, enclosed in triple backticks with 'mermaid'. "
+    "Rules to follow strictly:\n"
+    "1. The diagram MUST start with 'graph TD;' or 'graph LR;'.\n"
+    "2. Node text inside [] or {} MUST NOT contain parentheses (), commas, colons, semicolons, or special symbols. "
+    "Use simple words only.\n"
+    "3. If multiple options are needed, represent them as separate nodes or as edge labels, not inside a single node.\n"
+    "4. Only output nodes and edges — no explanations, no comments.\n"
+    "If input cannot be converted, output a minimal valid diagram: "
+    "```mermaid\\ngraph TD; A[Invalid Input];\\n```"
+)
+
+
     messages = [
         {"role": "control", "content": "thinking"},
         {"role": "system", "content": system_message_content},
@@ -146,7 +160,7 @@ def translate_mermaid_to_image(mermaid_code: str, output_filename: str, output_f
             f.write(mermaid_code)
 
         if os.name == "nt":
-            mmdc_path = r"C:\Users\OS6069\AppData\Roaming\npm\mmdc.cmd"
+            mmdc_path = r"C:\Users\amoly\AppData\Roaming\npm\mmdc.cmd"
         else:
             mmdc_path = r"/usr/bin/mmdc"
 

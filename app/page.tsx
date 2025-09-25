@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-
+import MermaidChart from "@/components/FlowchartCanvas";
 import { useState } from "react"
 import { MermaidDisplay } from "@/components/mermaid-display"
 
@@ -96,9 +96,9 @@ export default function Home() {
       </div>
 
       {/* Right Panel: Mermaid Live Editor */}
-      <div className="w-1/2 p-8 flex flex-col items-center justify-center bg-gray-50">
+      <div className="h-400 flex flex-col items-center justify-center bg-gray-50">
         {mermaidCode ? (
-          <MermaidDisplay chart={mermaidCode} />
+          <MermaidChart chart={mermaidCode} />
         ) : (
           <div className="text-center text-gray-500 text-lg">
             {loading ? <p>Loading flowchart...</p> : <p>Welcome to Flowcharts AI</p>}
