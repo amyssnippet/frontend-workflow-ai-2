@@ -1,34 +1,23 @@
-import type { Metadata } from 'next'
-import { GeistSans } from 'geist/font/sans'
-import { GeistMono } from 'geist/font/mono'
-import { Analytics } from '@vercel/analytics/next'
-import './globals.css'
+"use client"
 
-export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
-  generator: 'v0.app',
-}
+import React from "react"
+import { Toaster } from "@/components/ui/toaster"
+import "./globals.css"
+import { ThemeProvider } from "@/components/theme-provider"
+import AppLayout from "@/components/layout/AppLayout"
+import { Analytics } from "@vercel/analytics/next"
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <head>
-        <style>{`
-html {
-  font-family: ${GeistSans.style.fontFamily};
-  --font-sans: ${GeistSans.variable};
-  --font-mono: ${GeistMono.variable};
-}
-        `}</style>
-      </head>
-      <body>
-        {children}
-        <Analytics />
+      <body className="min-h-screen bg-gradient-to-tr from-indigo-700 via-purple-700 to-pink-700 relative transition-colors">
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <AppLayout>
+            {children}
+          </AppLayout>
+          <Toaster />
+          <Analytics />
+        </ThemeProvider>
       </body>
     </html>
   )

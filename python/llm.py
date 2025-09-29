@@ -25,9 +25,9 @@ if not os.path.exists("static"):
     os.makedirs("static")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-OLLAMA_API_URL = "http://localhost:11434/api/chat"
+OLLAMA_API_URL = "https://turned-intervention-catherine-vincent.trycloudflare.com/api/chat"
 OLLAMA_MODEL = "granite3.3:8b"
-
+token = "ac01d6d03fe9feac354add11a4ac67ef51a089594835d56056436f48c9e00ed1"
 
 def check_mmdc_installed():
     try:
@@ -121,7 +121,7 @@ def call_ollama_granite(user_prompt):
         {"role": "user", "content": user_prompt},
     ]
     payload = {"model": OLLAMA_MODEL, "messages": messages, "stream": False}
-    headers = {"Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
 
     try:
         response = requests.post(OLLAMA_API_URL, headers=headers, data=json.dumps(payload))
