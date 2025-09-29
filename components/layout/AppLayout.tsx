@@ -94,8 +94,8 @@ const Sidebar = () => {
 
   // Get current active item based on pathname
   const getActiveItem = () => {
-    if (pathname === '/workspace') return 'dashboard'
-    const item = sidebarItems.find(item => pathname.startsWith(item.href) && item.href !== '/workspace')
+    if (pathname === '/') return 'dashboard'
+    const item = sidebarItems.find(item => pathname.startsWith(item.href) && item.href !== '/')
     return item?.id || 'dashboard'
   }
 
