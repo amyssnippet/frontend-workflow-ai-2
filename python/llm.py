@@ -16,7 +16,7 @@ from pptx import Presentation
 app = FastAPI(title="Ollama Mermaid Diagram API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Next dev server
+    allow_origins=["http://92.242.187.224:3000"],  # Next dev server
     allow_methods=["*"],
     allow_headers=["*"],
 )
