@@ -12,6 +12,7 @@ const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: [],
     appDir: true,
+    immediatelyRender: false,
   }
 }
 
