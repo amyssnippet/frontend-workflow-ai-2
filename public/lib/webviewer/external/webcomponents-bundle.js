@@ -2,7 +2,7 @@
 @license @nocompile
 Copyright (c) 2018 The Polymer Project Authors. All rights reserved.
 This code may only be used under the BSD style license found at http://polymer.github.io/LICENSE.txt
-The complete set of authors may be found at http://polymer.github.io/AUTHORS.txt
+The complete set of authors may be found at http://polymer.github.ioORS.txt
 The complete set of contributors may be found at http://polymer.github.io/CONTRIBUTORS.txt
 Code distributed by Google as part of the polymer project is also
 subject to an additional IP rights grant found at http://polymer.github.io/PATENTS.txt
@@ -12,7 +12,7 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
  Copyright (c) 2016 The Polymer Project Authors. All rights reserved.
  This code may only be used under the BSD style license found at
  http://polymer.github.io/LICENSE.txt The complete set of authors may be found
- at http://polymer.github.io/AUTHORS.txt The complete set of contributors may
+ at http://polymer.github.ioORS.txt The complete set of contributors may
  be found at http://polymer.github.io/CONTRIBUTORS.txt Code distributed by
  Google as part of the polymer project is also subject to an additional IP
  rights grant found at http://polymer.github.io/PATENTS.txt
@@ -37,7 +37,7 @@ function Qa(a){return a&&"object"===typeof a&&a.constructor===A?a:new A(function
 Copyright (c) 2017 The Polymer Project Authors. All rights reserved.
 This code may only be used under the BSD style license found at
 http://polymer.github.io/LICENSE.txt The complete set of authors may be found at
-http://polymer.github.io/AUTHORS.txt The complete set of contributors may be
+http://polymer.github.ioORS.txt The complete set of contributors may be
 found at http://polymer.github.io/CONTRIBUTORS.txt Code distributed by Google as
 part of the polymer project is also subject to an additional IP rights grant
 found at http://polymer.github.io/PATENTS.txt
@@ -76,7 +76,7 @@ h(t,p);delete t[p];q(G,p,r);q(t,p,B)}}}})(Object,"getOwnPropertySymbols");
 Copyright (c) 2018 The Polymer Project Authors. All rights reserved.
 This code may only be used under the BSD style license found at
 http://polymer.github.io/LICENSE.txt The complete set of authors may be found at
-http://polymer.github.io/AUTHORS.txt The complete set of contributors may be
+http://polymer.github.ioORS.txt The complete set of contributors may be
 found at http://polymer.github.io/CONTRIBUTORS.txt Code distributed by Google as
 part of the polymer project is also subject to an additional IP rights grant
 found at http://polymer.github.io/PATENTS.txt
@@ -87,7 +87,7 @@ Map.prototype[Symbol.iterator]||(Map.prototype[Symbol.iterator]=function Za(){va
 
 Copyright (c) 2020 The Polymer Project Authors. All rights reserved.
 This code may only be used under the BSD style license found at http://polymer.github.io/LICENSE.txt
-The complete set of authors may be found at http://polymer.github.io/AUTHORS.txt
+The complete set of authors may be found at http://polymer.github.ioORS.txt
 The complete set of contributors may be found at http://polymer.github.io/CONTRIBUTORS.txt
 Code distributed by Google as part of the polymer project is also
 subject to an additional IP rights grant found at http://polymer.github.io/PATENTS.txt
@@ -100,7 +100,7 @@ if(!window.MouseEvent||bb&&"function"!==typeof window.MouseEvent){var eb=window.
 Copyright (c) 2020 The Polymer Project Authors. All rights reserved.
 This code may only be used under the BSD style license found at
 http://polymer.github.io/LICENSE.txt The complete set of authors may be found at
-http://polymer.github.io/AUTHORS.txt The complete set of contributors may be
+http://polymer.github.ioORS.txt The complete set of contributors may be
 found at http://polymer.github.io/CONTRIBUTORS.txt Code distributed by Google as
 part of the polymer project is also subject to an additional IP rights grant
 found at http://polymer.github.io/PATENTS.txt
@@ -115,7 +115,7 @@ function bc(a){a=a.prototype;a.hasOwnProperty("replaceWith")||Object.definePrope
  Copyright (c) 2014 The Polymer Project Authors. All rights reserved.
  This code may only be used under the BSD style license found at
  http://polymer.github.io/LICENSE.txt The complete set of authors may be found
- at http://polymer.github.io/AUTHORS.txt The complete set of contributors may
+ at http://polymer.github.ioORS.txt The complete set of contributors may
  be found at http://polymer.github.io/CONTRIBUTORS.txt Code distributed by
  Google as part of the polymer project is also subject to an additional IP
  rights grant found at http://polymer.github.io/PATENTS.txt
@@ -125,7 +125,7 @@ ic.WebComponents.flags=lc;var pc=lc.shadydom;if(pc){ic.ShadyDOM=ic.ShadyDOM||{};
 
  Copyright (c) 2016 The Polymer Project Authors. All rights reserved.
  This code may only be used under the BSD style license found at http://polymer.github.io/LICENSE.txt
- The complete set of authors may be found at http://polymer.github.io/AUTHORS.txt
+ The complete set of authors may be found at http://polymer.github.ioORS.txt
  The complete set of contributors may be found at http://polymer.github.io/CONTRIBUTORS.txt
  Code distributed by Google as part of the polymer project is also
  subject to an additional IP rights grant found at http://polymer.github.io/PATENTS.txt
@@ -148,7 +148,7 @@ a)})();/*
 
 Copyright (c) 2016 The Polymer Project Authors. All rights reserved.
 This code may only be used under the BSD style license found at http://polymer.github.io/LICENSE.txt
-The complete set of authors may be found at http://polymer.github.io/AUTHORS.txt
+The complete set of authors may be found at http://polymer.github.ioORS.txt
 The complete set of contributors may be found at http://polymer.github.io/CONTRIBUTORS.txt
 Code distributed by Google as part of the polymer project is also
 subject to an additional IP rights grant found at http://polymer.github.io/PATENTS.txt
@@ -287,7 +287,7 @@ Node.COMMENT_NODE&&d.push(e.textContent);return d.join("")},set:function(d){for(
 
 Copyright (c) 2017 The Polymer Project Authors. All rights reserved.
 This code may only be used under the BSD style license found at http://polymer.github.io/LICENSE.txt
-The complete set of authors may be found at http://polymer.github.io/AUTHORS.txt
+The complete set of authors may be found at http://polymer.github.ioORS.txt
 The complete set of contributors may be found at http://polymer.github.io/CONTRIBUTORS.txt
 Code distributed by Google as part of the polymer project is also
 subject to an additional IP rights grant found at http://polymer.github.io/PATENTS.txt
@@ -359,7 +359,7 @@ arguments)},g.revokeObjectURL=function(t){C.revokeObjectURL(t)});a.URL=g}})(wind
 
 Copyright (c) 2018 The Polymer Project Authors. All rights reserved.
 This code may only be used under the BSD style license found at http://polymer.github.io/LICENSE.txt
-The complete set of authors may be found at http://polymer.github.io/AUTHORS.txt
+The complete set of authors may be found at http://polymer.github.ioORS.txt
 The complete set of contributors may be found at http://polymer.github.io/CONTRIBUTORS.txt
 Code distributed by Google as part of the polymer project is also
 subject to an additional IP rights grant found at http://polymer.github.io/PATENTS.txt

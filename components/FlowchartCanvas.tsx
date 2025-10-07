@@ -111,6 +111,21 @@ const MermaidChart: React.FC<EnhancedMermaidChartProps> = ({
       setErrorMessage("")
       return true
     } catch (error: any) {
+      // Remove any global Mermaid error nodes injected into the document
+      try {
+        if (typeof document !== 'undefined') {
+          const nodes = Array.from(document.body.querySelectorAll('*')) as Element[]
+          nodes.forEach((el) => {
+            const txt = (el.textContent || '').toLowerCase()
+            if (txt.includes('syntax error in text') || txt.includes('mermaid version')) {
+              el.remove()
+            }
+          })
+        }
+      } catch (e) {
+        // ignore
+      }
+
       setIsValidCode(false)
       setErrorMessage(error.message || "Invalid Mermaid syntax")
       return false
@@ -147,6 +162,22 @@ const MermaidChart: React.FC<EnhancedMermaidChartProps> = ({
       }
     } catch (error) {
       console.error("Error rendering Mermaid chart:", error)
+
+      // Remove any global Mermaid error nodes that may have been injected
+      try {
+        if (typeof document !== 'undefined') {
+          const nodes = Array.from(document.body.querySelectorAll('*')) as Element[]
+          nodes.forEach((el) => {
+            const txt = (el.textContent || '').toLowerCase()
+            if (txt.includes('syntax error in text') || txt.includes('mermaid version')) {
+              el.remove()
+            }
+          })
+        }
+      } catch (e) {
+        // ignore
+      }
+
       chartRef.current.innerHTML = `<div class="text-red-500 p-4 text-center">
         <p class="font-semibold">Error rendering chart</p>
         <p class="text-sm mt-2">${error}</p>
@@ -179,6 +210,19 @@ const MermaidChart: React.FC<EnhancedMermaidChartProps> = ({
       if (isValid) {
         setCurrentChart(value)
         onChartChange?.(value)
+        // attempt autosave (best-effort)
+        try {
+          const access = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+          if (access) {
+            fetch('/autosave', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${access}` },
+              body: JSON.stringify({ type: 'mermaid', title: 'Autosave', content: value })
+            }).catch(() => {})
+          }
+        } catch (e) {
+          // ignore autosave failures
+        }
       }
     }, 500)
   }, [validateMermaidCode, onChartChange])
@@ -193,6 +237,19 @@ const MermaidChart: React.FC<EnhancedMermaidChartProps> = ({
         title: "Chart Updated",
         description: "Your changes have been applied successfully.",
       })
+      // Save to server if authenticated
+      try {
+        const access = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+        if (access) {
+          fetch('/autosave', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${access}` },
+            body: JSON.stringify({ type: 'mermaid', title: 'Manual save', content: editorCode })
+          }).catch(() => {})
+        }
+      } catch (e) {
+        // ignore
+      }
     } else {
       toast({
         title: "Invalid Code",

@@ -8,11 +8,11 @@ const dotenv = require('dotenv');
 dotenv.config();
 
 const sequelize = require('./db');
-const authRoutes = require('./routes/auth');
+const authRoutes = require('./routes');
 const chatRoutes = require('./routes/chat');
 const flowchartRoutes = require('./routes/flowchartRoutes');
-const { rateLimiter } = require('./middleware/auth');
-const { authenticate } = require('./middleware/auth');
+const { rateLimiter } = require('./middleware');
+const { authenticate } = require('./middleware');
 
 const app = express();
 
@@ -34,7 +34,7 @@ app.get('/health', (req, res) => {
 });
 
 // API routes
-app.use('/api/auth', authRoutes);
+app.use('/api', authRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/flowcharts', flowchartRoutes);
 

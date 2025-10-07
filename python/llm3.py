@@ -9,7 +9,7 @@ import io
 from typing import List, Dict, Tuple
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Body
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Body, Request
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 import mammoth
 from fastapi.staticfiles import StaticFiles
@@ -22,6 +22,14 @@ from PIL import Image, ImageDraw, ImageFont
 import pdfplumber
 from docx import Document as DocxDocument
 from pptx import Presentation
+import sqlite3
+import jwt
+from datetime import datetime, timedelta
+import hashlib
+import uuid
+import time
+import secrets
+from typing import Optional
 
 app = FastAPI(title="Merged Ollama API (llm3)")
 app.add_middleware(
@@ -39,6 +47,356 @@ if not os.path.exists("input/images"):
     os.makedirs("input/images")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Ensure data directory and DB
+DB_PATH = os.path.join("data", "app.db")
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+
+
+def get_db_conn():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY,
+        username TEXT UNIQUE,
+        email TEXT UNIQUE,
+        password_hash TEXT,
+        password_salt TEXT,
+        token TEXT,
+        token_expiry INTEGER
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS history (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER,
+        type TEXT,
+        title TEXT,
+        content TEXT,
+        created_at INTEGER,
+        updated_at INTEGER,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS sessions (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER,
+        refresh_token TEXT,
+        expires_at INTEGER,
+        created_at INTEGER,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    )
+    """)
+    conn.commit()
+    conn.close()
+    # Attempt to add email verification columns to users table if they don't exist
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0")
+        cur.execute("ALTER TABLE users ADD COLUMN email_verification_token TEXT")
+        cur.execute("ALTER TABLE users ADD COLUMN email_verification_expiry INTEGER")
+        conn.commit()
+        conn.close()
+    except Exception:
+        # columns already exist or cannot be added; ignore
+        try:
+            conn.close()
+        except:
+            pass
+
+
+# Hardcoded configuration (development). Replace these placeholders with real values if needed.
+SMTP_HOST = 'smtp.gmail.com'
+SMTP_PORT = 587
+SMTP_USER = 'amolyadav6125@gmail.com'  # <-- replace with SMTP username
+SMTP_PASS = 'zmvtqtsgqkaqdqqv'          # <-- replace with SMTP password or app-specific password
+EMAIL_FROM = SMTP_USER
+FRONTEND_URL = 'http://localhost:3000'
+
+# Development toggle: allow sign-in even if email is not verified
+# Hardcoded to True for convenience in local dev. Set to False in production.
+ALLOW_UNVERIFIED_LOGIN = True
+
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+
+def create_email_verification_token(user_id: int, hours_valid: int = 24) -> str:
+    token = uuid.uuid4().hex
+    expiry = int(time.time()) + hours_valid * 3600
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute('UPDATE users SET email_verification_token = ?, email_verification_expiry = ?, email_verified = 0 WHERE id = ?', (token, expiry, user_id))
+    conn.commit()
+    conn.close()
+    return token
+
+
+def send_verification_email(to_email: str, token: str, username: Optional[str] = None):
+    if not SMTP_USER or not SMTP_PASS:
+        # SMTP not configured — do not send email. Return False so callers can handle.
+        return False
+    verify_url = f"{FRONTEND_URL}/verify?token={token}"
+    subject = "Verify your email"
+    text = f"Hello {username or ''},\n\nPlease verify your email by clicking the link below:\n\n{verify_url}\n\nThis link will expire in 24 hours.\n\nThanks!"
+    html = f"<p>Hello {username or ''},</p><p>Please verify your email by clicking the link below:</p><p><a href=\"{verify_url}\">Verify Email</a></p><p>This link will expire in 24 hours.</p>"
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = subject
+    msg['From'] = EMAIL_FROM
+    msg['To'] = to_email
+    part1 = MIMEText(text, 'plain')
+    part2 = MIMEText(html, 'html')
+    msg.attach(part1)
+    msg.attach(part2)
+    try:
+        server = smtplib.SMTP(SMTP_HOST, SMTP_PORT)
+        server.ehlo()
+        if SMTP_PORT == 587:
+            server.starttls()
+            server.ehlo()
+        server.login(SMTP_USER, SMTP_PASS)
+        server.sendmail(EMAIL_FROM, [to_email], msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        print('Failed to send verification email:', e)
+        return False
+
+
+def hash_password(password: str) -> tuple:
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100_000)
+    return dk.hex(), salt.hex()
+
+
+def verify_password(password: str, hash_hex: str, salt_hex: str) -> bool:
+    salt = bytes.fromhex(salt_hex)
+    dk = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100_000)
+    return secrets.compare_digest(dk.hex(), hash_hex)
+
+
+def create_user(username: Optional[str], email: Optional[str], password: str):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    password_hash, password_salt = hash_password(password)
+    try:
+        cur.execute("INSERT INTO users (username, email, password_hash, password_salt) VALUES (?,?,?,?)",
+                    (username, email, password_hash, password_salt))
+        conn.commit()
+        user_id = cur.lastrowid
+    except sqlite3.IntegrityError as e:
+        conn.close()
+        raise
+    conn.close()
+    return user_id
+
+
+def authenticate_user(identifier: str, password: str):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE username = ? OR email = ?", (identifier, identifier))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return None
+    if verify_password(password, row['password_hash'], row['password_salt']):
+        return dict(row)
+    return None
+
+
+def generate_token_for_user(user_id: int, days_valid: int = 30) -> str:
+    # legacy token storage retained for compatibility; prefer refresh tokens below
+    token = uuid.uuid4().hex
+    expiry = int(time.time()) + days_valid * 24 * 3600
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET token = ?, token_expiry = ? WHERE id = ?", (token, expiry, user_id))
+    conn.commit()
+    conn.close()
+    return token
+
+
+# JWT / Refresh token configuration
+# Hardcoded secret key for JWT (development only). Replace for production.
+SECRET_KEY = 'dev-secret-key'
+ALGORITHM = 'HS256'
+ACCESS_TOKEN_EXPIRE_MINUTES = 15
+REFRESH_TOKEN_EXPIRE_DAYS = 30
+
+
+def create_refresh_token_for_user(user_id: int, days: int = REFRESH_TOKEN_EXPIRE_DAYS) -> str:
+    refresh = uuid.uuid4().hex
+    expires_at = int(time.time()) + days * 24 * 3600
+    now = int(time.time())
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute('INSERT INTO sessions (user_id, refresh_token, expires_at, created_at) VALUES (?,?,?,?)', (user_id, refresh, expires_at, now))
+    conn.commit()
+    conn.close()
+    return refresh
+
+
+def verify_refresh_token(refresh_token: str):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    now = int(time.time())
+    cur.execute('SELECT * FROM sessions WHERE refresh_token = ? AND expires_at > ?', (refresh_token, now))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def delete_refresh_token(refresh_token: str):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute('DELETE FROM sessions WHERE refresh_token = ?', (refresh_token,))
+    conn.commit()
+    conn.close()
+
+
+def delete_all_sessions_for_user(user_id: int):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute('DELETE FROM sessions WHERE user_id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+
+
+def create_access_token(user_id: int, expires_delta: timedelta | None = None):
+    to_encode = {"sub": str(user_id)}
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+def decode_access_token(token: str):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        uid = int(payload.get('sub'))
+        return uid
+    except Exception:
+        return None
+
+
+def get_user_from_request(request: Request):
+    # First try Authorization header as Bearer access token
+    auth = request.headers.get('authorization') or request.headers.get('Authorization')
+    if auth and auth.lower().startswith('bearer '):
+        token = auth.split(None, 1)[1]
+        # try JWT
+        uid = decode_access_token(token)
+        if uid:
+            conn = get_db_conn()
+            cur = conn.cursor()
+            cur.execute('SELECT * FROM users WHERE id = ?', (uid,))
+            row = cur.fetchone()
+            conn.close()
+            return dict(row) if row else None
+        # fallback to legacy token stored in users table
+        user = get_user_by_token(token)
+        return user
+    return None
+
+
+@app.middleware('http')
+async def attach_user_middleware(request: Request, call_next):
+    try:
+        user = get_user_from_request(request)
+        request.state.user = user
+    except Exception:
+        request.state.user = None
+    response = await call_next(request)
+    return response
+
+
+def get_user_by_token(token: str):
+    if not token:
+        return None
+    conn = get_db_conn()
+    cur = conn.cursor()
+    now = int(time.time())
+    cur.execute("SELECT * FROM users WHERE token = ? AND token_expiry > ?", (token, now))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def invalidate_token(token: str):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET token = NULL, token_expiry = NULL WHERE token = ?", (token,))
+    conn.commit()
+    conn.close()
+
+
+def save_history(user_id: int, htype: str, title: str, content: str) -> int:
+    now = int(time.time())
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO history (user_id, type, title, content, created_at, updated_at) VALUES (?,?,?,?,?,?)",
+                (user_id, htype, title, content, now, now))
+    conn.commit()
+    hid = cur.lastrowid
+    conn.close()
+    return hid
+
+
+def update_history_entry(entry_id: int, user_id: int, title: Optional[str], content: Optional[str]) -> bool:
+    parts = []
+    params = []
+    if title is not None:
+        parts.append("title = ?")
+        params.append(title)
+    if content is not None:
+        parts.append("content = ?")
+        params.append(content)
+    if not parts:
+        return False
+    params.extend([int(time.time()), entry_id, user_id])
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute(f"UPDATE history SET {', '.join(parts)}, updated_at = ? WHERE id = ? AND user_id = ?", params)
+    conn.commit()
+    changed = cur.rowcount
+    conn.close()
+    return changed > 0
+
+
+def list_history_for_user(user_id: int):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id, type, title, substr(content,1,200) as snippet, created_at, updated_at FROM history WHERE user_id = ? ORDER BY updated_at DESC", (user_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_history_entry(entry_id: int, user_id: int):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM history WHERE id = ? AND user_id = ?", (entry_id, user_id))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+@app.on_event("startup")
+async def _init_db_event():
+    init_db()
 
 # Shared configuration
 OLLAMA_API_URL = "https://climb-buf-pregnant-arrange.trycloudflare.com/api/chat"
@@ -556,7 +914,7 @@ def create_sop_docx_with_images(workflow_steps: List[Dict], flowchart_path: str 
 
 
 @app.post("/generate-process-images/")
-async def generate_diagram_with_process_images(description: str = Form(None), files: List[UploadFile] = File(None), output_format: str = Form("png")):
+async def generate_diagram_with_process_images(request: Request, description: str = Form(None), files: List[UploadFile] = File(None), output_format: str = Form("png")):
     async with app.state.semaphore:
         print("Starting request (generate-process-images)")
         process_dir = "static/process_images"
@@ -583,11 +941,25 @@ async def generate_diagram_with_process_images(description: str = Form(None), fi
             raise HTTPException(status_code=400, detail="No images provided; use files parameter")
         workflow_steps = extract_steps_from_analysis(image_analyses)
         sop_docx_path = await loop.run_in_executor(app.state.cpu_executor, create_sop_docx_with_images, workflow_steps)
-        return {"sop_docx_url": f"/static/{os.path.basename(sop_docx_path)}", "process_steps": process_steps, "workflow_steps": workflow_steps, "total_steps": len(workflow_steps)}
+        result = {"sop_docx_url": f"/static/{os.path.basename(sop_docx_path)}", "process_steps": process_steps, "workflow_steps": workflow_steps, "total_steps": len(workflow_steps)}
+        try:
+            auth = request.headers.get('authorization') or request.headers.get('Authorization')
+            if auth and auth.lower().startswith('bearer '):
+                token = auth.split(None, 1)[1]
+                user = get_user_by_token(token)
+                if user:
+                    # Save docx reference
+                    save_history(user['id'], 'docx', f'Processed SOP {int(time.time())}', f"/static/{os.path.basename(sop_docx_path)}")
+                    # Save first mermaid if available
+                    if workflow_steps and workflow_steps[0].get('full_analysis'):
+                        save_history(user['id'], 'mermaid', f'Flow from process {int(time.time())}', workflow_steps[0]['full_analysis'])
+        except Exception:
+            pass
+        return result
 
 
 @app.post("/generate-docx/")
-async def generate_diagram_with_docx(description: str = Form(None), file: UploadFile = File(None), output_format: str = Form("png")):
+async def generate_diagram_with_docx(request: Request, description: str = Form(None), file: UploadFile = File(None), output_format: str = Form("png")):
     # Keep implementation similar to llm.py but run heavy parts in executors
     prompt_text = description.strip() if description else None
     steps_log = []
@@ -675,6 +1047,19 @@ async def generate_diagram_with_docx(description: str = Form(None), file: Upload
     docx_filename = "flowchart_generation_report.docx"
     docx_path = f"static/{docx_filename}"
     doc.save(docx_path)
+    # If request includes a valid Authorization token, save history entries for generated content
+    try:
+        auth = request.headers.get('authorization') or request.headers.get('Authorization')
+        if auth and auth.lower().startswith('bearer '):
+            token = auth.split(None, 1)[1]
+            user = get_user_by_token(token)
+            if user:
+                # Save mermaid
+                save_history(user['id'], 'mermaid', f'Generated flowchart {int(time.time())}', mermaid_code)
+                # Save docx reference
+                save_history(user['id'], 'docx', f'Generated report {int(time.time())}', f"/static/{docx_filename}")
+    except Exception:
+        pass
     steps_log.append("Step 5 Complete: DOCX document created successfully")
     return {"mermaid": mermaid_code, "image_url": f"/static/{os.path.basename(result)}", "docx_url": f"/static/{docx_filename}", "message": "Flowchart and detailed report generated successfully", "steps": steps_log, "image_exists": os.path.exists(result), "image_size": os.path.getsize(result) if os.path.exists(result) else 0}
 
@@ -763,3 +1148,276 @@ def preview_docx(filename: str):
 @app.get("/")
 async def root():
     return {"message": "Merged llm3 API running - endpoints: /generate-process-images/, /generate-docx/, /regenerate-docx/"}
+
+
+@app.post('/signup')
+async def signup(payload: Dict = Body(...)):
+    # Accept fullName for frontend compatibility
+    username = payload.get('username') or payload.get('fullName')
+    email = payload.get('email')
+    password = payload.get('password')
+    if not password or (not username and not email):
+        raise HTTPException(status_code=400, detail='username/email and password required')
+    try:
+        user_id = create_user(username, email, password)
+        # create verification token and send email
+        verification_sent = False
+        if email:
+            token = create_email_verification_token(user_id)
+            verification_sent = send_verification_email(email, token, username)
+        return {'id': user_id, 'message': 'User created', 'verification_sent': bool(verification_sent)}
+    except sqlite3.IntegrityError as e:
+        raise HTTPException(status_code=400, detail='User with that username or email already exists')
+
+
+@app.post('/signin')
+async def signin(payload: Dict = Body(...)):
+    identifier = payload.get('identifier') or payload.get('username') or payload.get('email')
+    password = payload.get('password')
+    if not identifier or not password:
+        raise HTTPException(status_code=400, detail='identifier and password required')
+    user = authenticate_user(identifier, password)
+    if not user:
+        raise HTTPException(status_code=401, detail='Invalid credentials')
+    # block if email not verified unless dev toggle enabled
+    if user.get('email') and not user.get('email_verified'):
+        if not ALLOW_UNVERIFIED_LOGIN:
+            raise HTTPException(status_code=403, detail='Email not verified. Please check your inbox or request a verification email.')
+        else:
+            # allow login but inform client
+            access = create_access_token(user['id'])
+            refresh = create_refresh_token_for_user(user['id'])
+            generate_token_for_user(user['id'])
+            return {'access_token': access, 'refresh_token': refresh, 'user': {'id': user['id'], 'username': user.get('username'), 'email': user.get('email')}, 'warning': 'Email not verified, logged in due to ALLOW_UNVERIFIED_LOGIN'}
+    # Create refresh session and issue access token
+    refresh = create_refresh_token_for_user(user['id'])
+    access = create_access_token(user['id'])
+    # keep legacy token as well
+    generate_token_for_user(user['id'])
+    return {'access_token': access, 'refresh_token': refresh, 'user': {'id': user['id'], 'username': user.get('username'), 'email': user.get('email')}}
+
+
+@app.post('/signout')
+async def signout(request: Request, payload: Dict = Body(None)):
+    # Sign out a refresh token (client should send refresh_token) or invalidate legacy token in header
+    if payload and payload.get('refresh_token'):
+        delete_refresh_token(payload['refresh_token'])
+        return {'message': 'Refresh token deleted'}
+    auth = request.headers.get('authorization') or request.headers.get('Authorization')
+    if not auth or not auth.lower().startswith('bearer '):
+        raise HTTPException(status_code=401, detail='Authorization required')
+    token = auth.split(None, 1)[1]
+    # attempt to delete as refresh token
+    try:
+        delete_refresh_token(token)
+    except Exception:
+        pass
+    # invalidate legacy token if present
+    invalidate_token(token)
+    return {'message': 'Signed out'}
+
+
+@app.post('/refresh')
+async def refresh_token(payload: Dict = Body(...)):
+    refresh = payload.get('refresh_token')
+    if not refresh:
+        raise HTTPException(status_code=400, detail='refresh_token required')
+    session = verify_refresh_token(refresh)
+    if not session:
+        raise HTTPException(status_code=401, detail='Invalid or expired refresh token')
+    user_id = session['user_id']
+    access = create_access_token(user_id)
+    return {'access_token': access}
+
+
+@app.post('/signout-all')
+async def signout_all(request: Request):
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=401, detail='Authorization required')
+    delete_all_sessions_for_user(user['id'])
+    return {'message': 'All sessions deleted'}
+
+
+@app.get('/verify-email')
+async def verify_email(token: str = None):
+    if not token:
+        raise HTTPException(status_code=400, detail='token required')
+    conn = get_db_conn()
+    cur = conn.cursor()
+    now = int(time.time())
+    cur.execute('SELECT id, email_verification_expiry FROM users WHERE email_verification_token = ?', (token,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail='Invalid token')
+    if row['email_verification_expiry'] and row['email_verification_expiry'] < now:
+        conn.close()
+        raise HTTPException(status_code=400, detail='Token expired')
+    cur.execute('UPDATE users SET email_verified = 1, email_verification_token = NULL, email_verification_expiry = NULL WHERE id = ?', (row['id'],))
+    conn.commit()
+    conn.close()
+    # Redirect to frontend success page
+    redirect_url = f"{FRONTEND_URL}/verify-success"
+    return JSONResponse({'message': 'Email verified', 'redirect': redirect_url})
+
+
+@app.post('/resend-verification')
+async def resend_verification(payload: Dict = Body(...)):
+    identifier = payload.get('identifier') or payload.get('email') or payload.get('username')
+    if not identifier:
+        raise HTTPException(status_code=400, detail='identifier required')
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute('SELECT id, email FROM users WHERE username = ? OR email = ?', (identifier, identifier))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail='User not found')
+    if not row['email']:
+        raise HTTPException(status_code=400, detail='User has no email')
+    token = create_email_verification_token(row['id'])
+    sent = send_verification_email(row['email'], token)
+    return {'message': 'Verification email queued' if sent else 'Verification email not sent', 'verification_sent': bool(sent)}
+
+
+# Compatibility auth-scoped routes (some clients expect /auth/* paths)
+@app.post('/auth/signup')
+async def auth_signup(payload: Dict = Body(...)):
+    return await signup(payload)
+
+
+@app.post('/auth/signin')
+async def auth_signin(payload: Dict = Body(...)):
+    return await signin(payload)
+
+
+@app.post('/auth/resend-verification')
+async def auth_resend_verification(payload: Dict = Body(...)):
+    return await resend_verification(payload)
+
+
+@app.get('/auth/verify')
+async def auth_verify(token: str = None):
+    return await verify_email(token)
+
+
+@app.get('/auth/me')
+async def auth_me(request: Request):
+    return await me(request)
+
+
+@app.post('/auth/signout')
+async def auth_signout(request: Request, payload: Dict = Body(None)):
+    return await signout(request, payload)
+
+
+@app.get('/me')
+async def me(request: Request):
+    # Prefer the user attached by middleware (supports JWT access tokens)
+    user = getattr(request.state, 'user', None)
+    if user:
+        return {'id': user['id'], 'username': user.get('username'), 'email': user.get('email')}
+
+    # Fallback: try to decode Authorization header manually (support legacy token lookup as well)
+    auth = request.headers.get('authorization') or request.headers.get('Authorization')
+    if auth and auth.lower().startswith('bearer '):
+        token = auth.split(None, 1)[1]
+        # Try JWT access token first
+        uid = decode_access_token(token)
+        if uid:
+            conn = get_db_conn()
+            cur = conn.cursor()
+            cur.execute('SELECT id, username, email FROM users WHERE id = ?', (uid,))
+            row = cur.fetchone()
+            conn.close()
+            if row:
+                return {'id': row['id'], 'username': row['username'], 'email': row['email']}
+
+        # Fall back to legacy token stored on users table
+        user = get_user_by_token(token)
+        if user:
+            return {'id': user['id'], 'username': user.get('username'), 'email': user.get('email')}
+
+    raise HTTPException(status_code=401, detail='Authorization required or invalid token')
+
+
+@app.post('/history/save')
+async def history_save(request: Request, payload: Dict = Body(...)):
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=401, detail='Authorization required')
+    htype = payload.get('type')
+    title = payload.get('title') or f'{htype} saved {int(time.time())}'
+    content = payload.get('content') or ''
+    entry_id = save_history(user['id'], htype, title, content)
+    return {'id': entry_id}
+
+
+@app.post('/history/update/{entry_id}')
+async def history_update(entry_id: int, request: Request, payload: Dict = Body(...)):
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=401, detail='Authorization required')
+    title = payload.get('title')
+    content = payload.get('content')
+    ok = update_history_entry(entry_id, user['id'], title, content)
+    if not ok:
+        raise HTTPException(status_code=404, detail='Not found or no changes')
+    return {'id': entry_id}
+
+
+@app.get('/history/list')
+async def history_list(request: Request):
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=401, detail='Authorization required')
+    items = list_history_for_user(user['id'])
+    return {'items': items}
+
+
+@app.get('/history/{entry_id}')
+async def history_get(entry_id: int, request: Request):
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=401, detail='Authorization required')
+    entry = get_history_entry(entry_id, user['id'])
+    if not entry:
+        raise HTTPException(status_code=404, detail='Not found')
+    return {'item': entry}
+
+
+@app.delete('/history/{entry_id}')
+async def history_delete(entry_id: int, request: Request):
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=401, detail='Authorization required')
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute('DELETE FROM history WHERE id = ? AND user_id = ?', (entry_id, user['id']))
+    conn.commit()
+    deleted = cur.rowcount
+    conn.close()
+    if not deleted:
+        raise HTTPException(status_code=404, detail='Not found')
+    return {'deleted': True}
+
+
+@app.post('/autosave')
+async def autosave(request: Request, payload: Dict = Body(...)):
+    """Autosave an editing buffer. If 'id' provided, update that history entry; otherwise create a new one."""
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=401, detail='Authorization required')
+    entry_id = payload.get('id')
+    htype = payload.get('type', 'mermaid')
+    title = payload.get('title')
+    content = payload.get('content', '')
+    if entry_id:
+        ok = update_history_entry(int(entry_id), user['id'], title, content)
+        if not ok:
+            raise HTTPException(status_code=404, detail='Entry not found')
+        return {'id': entry_id, 'updated': True}
+    else:
+        hid = save_history(user['id'], htype, title or f'Autosave {int(time.time())}', content)
+        return {'id': hid, 'created': True}

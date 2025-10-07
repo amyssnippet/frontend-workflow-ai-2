@@ -8,7 +8,7 @@ export default function NotFound() {
         The page you are looking for does not exist in the workspace.
       </p>
       <a
-        href="/workspace"
+        href="/"
         className="text-indigo-600 dark:text-indigo-400 hover:underline text-lg font-semibold"
       >
         Return to Workspace Home

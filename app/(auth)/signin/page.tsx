@@ -21,34 +21,50 @@ export default function SignIn() {
     setError(null);
 
     try {
-      const res = await fetch("/api/auth/signin", {
+      const API = 'http://localhost:8000'
+      const url = `${API}/signin`
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ identifier: email, password }),
       });
 
+      const data = await res.json()
       if (!res.ok) {
-        const data = await res.json();
-        setError(data.error ?? "Failed to sign in");
-        return;
+        setError(data.detail || data.error || 'Failed to sign in')
+        return
       }
 
-      router.replace("/workspace"); // Redirect after login
+      // store tokens
+      if (data.access_token) localStorage.setItem('accessToken', data.access_token)
+      if (data.refresh_token) localStorage.setItem('refreshToken', data.refresh_token)
+      router.replace('/')
     } catch (e) {
       setError("An unexpected error occurred");
     }
   };
 
   return (
-    <div className="flex min-h-screen bg-white dark:bg-gray-900">
-      {/* Left Form Side */}
-      <div className="w-full md:w-[30%] flex flex-col justify-center px-8 md:px-12 py-14">
-        <form onSubmit={handleSubmit} className="space-y-6 max-w-md mx-auto">
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white text-center mb-10">Sign In</h2>
+
+
+      <div className="flex-1 flex items-center justify-center p-8">
+        <div className="w-full max-w-md bg-white dark:bg-gray-800/90 backdrop-blur-sm p-8 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <h2 className="text-2xl md:text-3xl font-semibold text-gray-900 dark:text-white text-center mb-4">Sign In</h2>
           {error && (
-            <p className="text-red-600 text-sm text-center bg-red-100 border border-red-300 px-4 py-3 rounded-md mb-4">
-              {error}
-            </p>
+            <div className="text-center mb-4">
+              <p className="text-red-600 text-sm bg-red-100 border border-red-300 px-4 py-3 rounded-md inline-block">{error}</p>
+              {error?.toLowerCase().includes('email not verified') && (
+                <div className="mt-2">
+                  <button onClick={async () => {
+                    const API = process.env.NEXT_PUBLIC_API_URL ?? ''
+                    const url = API ? `${API}/resend-verification` : '/resend-verification'
+                    await fetch(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ identifier: email }) })
+                    alert('Verification email resent')
+                  }} className="text-sm text-indigo-600 underline">Resend verification email</button>
+                </div>
+              )}
+            </div>
           )}
 
           <div className="space-y-4">
@@ -62,7 +78,7 @@ export default function SignIn() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 dark:border-gray-600 p-3 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:text-white"
+              className="w-full rounded-lg border border-gray-200 dark:border-gray-700 p-3 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-900 dark:text-white bg-white/90"
               placeholder="you@example.com"
             />
           </div>
@@ -85,24 +101,20 @@ export default function SignIn() {
 
           <button
             type="submit"
-            className="w-full py-3 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-semibold rounded-lg shadow-md hover:brightness-110 transition"
+            className="w-full py-3 bg-green-700 hover:bg-green-800 text-white font-semibold rounded-lg shadow-md transition duration-150"
           >
             Sign In
           </button>
 
           <p className="text-center text-sm text-gray-600 dark:text-gray-400 mt-6">
             Don't have an account?{" "}
-            <Link href="/auth/signup" className="text-indigo-600 hover:underline">
+            <Link href="/signup" className="text-indigo-600 hover:underline">
               Sign Up
             </Link>
           </p>
-        </form>
+          </form>
+        </div>
       </div>
 
-      {/* Right Animation Side */}
-      <div className="hidden md:flex flex-1 justify-center items-center bg-gradient-to-tr from-indigo-500 via-purple-600 to-pink-600">
-        hello
-      </div>
-    </div>
   );
 }

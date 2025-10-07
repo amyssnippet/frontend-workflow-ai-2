@@ -7,7 +7,7 @@ const {
     getFlowchartById,
     upload 
 } = require('../controllers/flowchartController');
-const { authenticate } = require('../middleware/auth');
+const { authenticate } = require('../middleware');
 
 // Generate diagram endpoint (public)
 router.post('/generate', upload.single('file'), generateDiagram);
