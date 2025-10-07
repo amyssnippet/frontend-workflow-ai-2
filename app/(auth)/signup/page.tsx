@@ -21,7 +21,7 @@ export default function SignUp() {
     }
 
     try {
-      const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+      const API = process.env.NEXT_PUBLIC_API_URL ?? 'https://flowai-backend.othersys.com'
       const url = API ? `${API}/signup` : '/signup'
       const res = await fetch(url, {
         method: "POST",

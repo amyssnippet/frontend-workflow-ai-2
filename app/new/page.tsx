@@ -28,7 +28,7 @@ export default function NewFlowchart() {
     }
 
     try {
-      const response = await fetch("http://localhost:8000/generate-docx/", {
+      const response = await fetch("https://flowai-backend.othersys.com/generate-docx/", {
         method: "POST",
         body: formData,
       })

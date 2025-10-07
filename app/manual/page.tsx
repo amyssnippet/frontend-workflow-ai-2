@@ -63,7 +63,7 @@ export default function WorkflowGenerator() {
       selectedFiles.forEach(file => formData.append('files', file));
       formData.append('output_format', 'png');
 
-      const res = await fetch('http://localhost:8000/generate-process-images/', {
+      const res = await fetch('https://flowai-backend.othersys.com/generate-process-images/', {
         method: 'POST',
         body: formData,
       });
@@ -125,7 +125,7 @@ export default function WorkflowGenerator() {
   const regenerateDocx = async () => {
     setSaving(true);
     try {
-      const res = await fetch('http://localhost:8000/regenerate-docx/', {
+      const res = await fetch('https://flowai-backend.othersys.com/regenerate-docx/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workflow_steps: editedSteps }),
@@ -147,7 +147,7 @@ export default function WorkflowGenerator() {
 
   const downloadDocx = () => {
     if (response?.sop_docx_url) {
-      window.open(`http://localhost:8000${response.sop_docx_url}`, '_blank');
+      window.open(`https://flowai-backend.othersys.com${response.sop_docx_url}`, '_blank');
     }
   };
 
@@ -318,7 +318,7 @@ export default function WorkflowGenerator() {
                     {step.image_path && (
                       <div className="my-6 text-center">
                         <img
-                          src={`http://localhost:8000/${step.image_path}`}
+                          src={`https://flowai-backend.othersys.com/${step.image_path}`}
                           alt={`Step ${step.number}`}
                           className="max-w-full h-auto rounded-lg border border-gray-200 inline-block"
                           style={{ maxHeight: '400px' }}

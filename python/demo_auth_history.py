@@ -1,10 +1,10 @@
 """
 Simple demo script to exercise signup, signin, autosave and history list endpoints.
-Requires running server on http://localhost:8000
+Requires running server on https://flowai-backend.othersys.com
 """
 import requests
 
-BASE = "http://localhost:8000"
+BASE = "https://flowai-backend.othersys.com"
 
 # 1. Signup
 resp = requests.post(f"{BASE}/signup", json={"username": "demo_user", "email": "demo@example.com", "password": "secret123"})

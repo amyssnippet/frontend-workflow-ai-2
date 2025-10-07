@@ -21,7 +21,7 @@ export default function SignIn() {
     setError(null);
 
     try {
-      const API = 'http://localhost:8000'
+      const API = 'https://flowai-backend.othersys.com'
       const url = `${API}/signin`
       const res = await fetch(url, {
         method: "POST",

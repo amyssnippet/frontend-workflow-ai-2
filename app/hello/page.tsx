@@ -5,7 +5,7 @@ import { useAppContext } from "@/components/layout/AppLayout"
 import MermaidChart from "@/components/FlowchartCanvas"
 import { FileText, Upload, Download, Share, LayoutTemplateIcon, History, DownloadCloud, Cpu, RefreshCcw } from "lucide-react"
 
-const API_BASE = process.env.NEXT_PUBLIC_LLM_API_URL || "http://localhost:8000"
+const API_BASE = process.env.NEXT_PUBLIC_LLM_API_URL || "https://flowai-backend.othersys.com"
 
 type ProcessStep = {
   step: number

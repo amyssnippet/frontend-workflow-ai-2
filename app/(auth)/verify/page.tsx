@@ -17,7 +17,7 @@ function VerifyPageInner() {
       return;
     }
 
-    const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const API = process.env.NEXT_PUBLIC_API_URL || "https://flowai-backend.othersys.com";
     fetch(`${API}/verify-email?token=${encodeURIComponent(token)}`)
       .then((r) => r.json().then((j) => ({ ok: r.ok, body: j })))
       .then(({ ok, body }) => {

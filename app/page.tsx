@@ -6,7 +6,7 @@ import MermaidChart from "@/components/FlowchartCanvas"
 import { FileText, Upload, Download, Share, DownloadCloud, Sun, Moon } from "lucide-react"
 import { useTheme } from "next-themes"
 
-const API_BASE = process.env.NEXT_PUBLIC_LLM_API_URL || "http://localhost:8000"
+const API_BASE = process.env.NEXT_PUBLIC_LLM_API_URL || "https://flowai-backend.othersys.com"
 
 type ProcessStep = {
   step: number
