@@ -10,8 +10,6 @@ const nextConfig = {
     unoptimized: true,
   },
   experimental: {
-    serverComponentsExternalPackages: [],
-    appDir: true,
     immediatelyRender: false,
   }
 }
