@@ -434,7 +434,7 @@ def check_mmdc_installed():
         if os.name == "nt":
             mmdc_path = r"C:\Users\amoly\AppData\Roaming\npm\mmdc.cmd"
         else:
-            mmdc_path = r"/usr/bin/mmdc"
+            mmdc_path = r"/root/.volta/bin/mmdc"
         subprocess.run([mmdc_path, "--version"], check=True, capture_output=True)
         return True
     except (FileNotFoundError, subprocess.CalledProcessError):
@@ -547,7 +547,7 @@ def translate_mermaid_to_image(mermaid_code: str, output_filename: str, output_f
         if os.name == "nt":
             mmdc_path = r"C:\Users\amoly\AppData\Roaming\npm\mmdc.cmd"
         else:
-            mmdc_path = r"/usr/bin/mmdc"
+            mmdc_path = r"/root/.volta/bin/mmdc"
 
         subprocess.run([mmdc_path, "-i", temp_mermaid_file, "-o", output_path], check=True)
         return True, output_path
