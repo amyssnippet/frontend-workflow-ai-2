@@ -115,12 +115,12 @@ def init_db():
 
 
 # Hardcoded configuration (development). Replace these placeholders with real values if needed.
-SMTP_HOST = 'smtp.gmail.com'
+SMTP_HOST = 'smtp.hostinger.com'
 SMTP_PORT = 587
-SMTP_USER = 'amolyadav6125@gmail.com'  # <-- replace with SMTP username
-SMTP_PASS = 'zmvtqtsgqkaqdqqv'          # <-- replace with SMTP password or app-specific password
+SMTP_USER = 'noreply@othersys.com'  # <-- replace with SMTP username
+SMTP_PASS = 'Shidhi@4567'          # <-- replace with SMTP password or app-specific password
 EMAIL_FROM = SMTP_USER
-FRONTEND_URL = 'http://92.242.187.224:3001'
+FRONTEND_URL = 'https://flowai.othersys.com'
 
 # Development toggle: allow sign-in even if email is not verified
 # Hardcoded to True for convenience in local dev. Set to False in production.
