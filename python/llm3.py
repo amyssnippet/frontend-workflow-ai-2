@@ -34,7 +34,7 @@ from typing import Optional
 app = FastAPI(title="Merged Ollama API (llm3)")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://92.242.187.224:3001"],
+    allow_origins=["http://localhost:3000", "http://92.242.187.224:3001", "https://flowai.othersys.com"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
