@@ -34,7 +34,7 @@ from typing import Optional
 app = FastAPI(title="Merged Ollama API (llm3)")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://92.242.187.224:3001"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -120,7 +120,7 @@ SMTP_PORT = 587
 SMTP_USER = 'amolyadav6125@gmail.com'  # <-- replace with SMTP username
 SMTP_PASS = 'zmvtqtsgqkaqdqqv'          # <-- replace with SMTP password or app-specific password
 EMAIL_FROM = SMTP_USER
-FRONTEND_URL = 'http://localhost:3000'
+FRONTEND_URL = 'http://92.242.187.224:3001'
 
 # Development toggle: allow sign-in even if email is not verified
 # Hardcoded to True for convenience in local dev. Set to False in production.
