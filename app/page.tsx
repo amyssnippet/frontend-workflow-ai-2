@@ -6,7 +6,8 @@ import MermaidChart from "@/components/FlowchartCanvas"
 import { FileText, Upload, Download, Share, DownloadCloud, Sun, Moon } from "lucide-react"
 import { useTheme } from "next-themes"
 
-const API_BASE = process.env.NEXT_PUBLIC_LLM_API_URL || "https://flowai-backend.othersys.com"
+const API_BASE = "http://localhost:8000"
+// const API_BASE = "https://flowai-backend.othersys.com"
 
 type ProcessStep = {
   step: number
@@ -32,6 +33,26 @@ export default function HelloPage() {
 
   const { mermaidCode, setMermaidCode } = useAppContext()
   const [currentUser, setCurrentUser] = useState<{ id?: number; username?: string; email?: string } | null>(null)
+
+  // Autosave / history and chat state
+  const mermaidSaveTimer = useRef<number | null>(null)
+  const docSaveTimer = useRef<number | null>(null)
+  const mermaidAiTimer = useRef<number | null>(null)
+  const docAiTimer = useRef<number | null>(null)
+  const [mermaidAutosaveId, setMermaidAutosaveId] = useState<number | null>(null)
+  const [docText, setDocText] = useState<string>("")
+  const [docAutosaveId, setDocAutosaveId] = useState<number | null>(null)
+  const [historyItems, setHistoryItems] = useState<any[]>([])
+  const [mermaidAiLoading, setMermaidAiLoading] = useState(false)
+  const [docAiLoading, setDocAiLoading] = useState(false)
+  const [autoAiMermaid, setAutoAiMermaid] = useState(false)
+  const [autoAiDoc, setAutoAiDoc] = useState(false)
+
+  // Chat
+  const [chats, setChats] = useState<any[]>([])
+  const [selectedChat, setSelectedChat] = useState<number | null>(null)
+  const [chatMessages, setChatMessages] = useState<any[]>([])
+  const [chatInput, setChatInput] = useState("")
 
   // Theme toggle for left sidebar
   const ThemeToggle = () => {
@@ -59,6 +80,17 @@ export default function HelloPage() {
     fetchConcurrency()
     fetchCurrentUser()
   }, [])
+
+  useEffect(() => {
+    if (currentUser) {
+      fetchHistory()
+      fetchChats()
+    }
+  }, [currentUser])
+
+  useEffect(() => {
+    if (docxUrl) fetchPreviewText(docxUrl)
+  }, [docxUrl])
 
   const fetchCurrentUser = async () => {
     try {
@@ -109,6 +141,256 @@ export default function HelloPage() {
       return data
     } catch (e) {
       // ignore
+    }
+  }
+
+  // Autosave helpers
+  const saveMermaidAutosave = async (content: string) => {
+    try {
+      const access = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+      if (!access) return
+      const payload: any = { type: 'mermaid', content }
+      if (mermaidAutosaveId) payload.id = mermaidAutosaveId
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (access) headers['Authorization'] = `Bearer ${access}`
+      const res = await fetch(`${API_BASE}/autosave`, { method: 'POST', headers, body: JSON.stringify(payload) })
+      if (!res.ok) return
+      const d = await res.json()
+      if (d.id) setMermaidAutosaveId(d.id)
+      // refresh history list
+      fetchHistory()
+    } catch (e) {}
+  }
+
+  const saveDocAutosave = async (content: string) => {
+    try {
+      const access = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+      if (!access) return
+  const payload: any = { type: 'docx', content }
+  if (docAutosaveId) payload.id = docAutosaveId
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (access) headers['Authorization'] = `Bearer ${access}`
+  const res = await fetch(`${API_BASE}/autosave`, { method: 'POST', headers, body: JSON.stringify(payload) })
+      if (!res.ok) return
+      const d = await res.json()
+      if (d.id) setDocAutosaveId(d.id)
+      fetchHistory()
+    } catch (e) {}
+  }
+
+  const handleMermaidChange = (value: string) => {
+    setMermaidCode(value)
+    if (mermaidSaveTimer.current) window.clearTimeout(mermaidSaveTimer.current)
+    mermaidSaveTimer.current = window.setTimeout(() => {
+      saveMermaidAutosave(value)
+    }, 1200)
+    // schedule AI repair if auto enabled
+    if (autoAiMermaid) {
+      if (mermaidAiTimer.current) window.clearTimeout(mermaidAiTimer.current)
+      mermaidAiTimer.current = window.setTimeout(() => {
+        callAiRepairMermaid(value, true)
+      }, 2000)
+    }
+  }
+
+  const handleDocTextChange = (value: string) => {
+    setDocText(value)
+    if (docSaveTimer.current) window.clearTimeout(docSaveTimer.current)
+    docSaveTimer.current = window.setTimeout(() => {
+      saveDocAutosave(value)
+    }, 1200)
+    if (autoAiDoc) {
+      if (docAiTimer.current) window.clearTimeout(docAiTimer.current)
+      docAiTimer.current = window.setTimeout(() => {
+        callAiRepairDoc(value, true)
+      }, 2000)
+    }
+  }
+
+  // Fetch preview HTML and extract text for editing docx
+  const fetchPreviewText = async (docxUrlLocal?: string) => {
+    try {
+      if (!docxUrlLocal) return
+      const parts = docxUrlLocal.split('/')
+      const filename = parts[parts.length-1]
+      const res = await fetch(`${API_BASE}/preview-docx/${encodeURIComponent(filename)}`)
+      if (!res.ok) return
+      const html = await res.text()
+      // strip tags for basic editable text
+      const tmp = document.createElement('div')
+      tmp.innerHTML = html
+      const text = tmp.innerText || tmp.textContent || ''
+      setDocText(text)
+    } catch (e) {}
+  }
+
+  // History
+  const fetchHistory = async () => {
+    try {
+      const access = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+      if (!access) return
+      const res = await fetch(`${API_BASE}/history/list`, { headers: { Authorization: `Bearer ${access}` } })
+      if (!res.ok) return
+      const d = await res.json()
+      setHistoryItems(d.items || [])
+    } catch (e) {}
+  }
+
+  // Chat helpers
+  const fetchChats = async () => {
+    try {
+      const access = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+      if (!access) return
+      const res = await fetch(`${API_BASE}/chat/list`, { headers: { Authorization: `Bearer ${access}` } })
+      if (!res.ok) return
+      const d = await res.json()
+      setChats(d.items || [])
+      if (!selectedChat && d.items && d.items.length) {
+        setSelectedChat(d.items[0].id)
+        fetchChatMessages(d.items[0].id)
+      }
+    } catch (e) {}
+  }
+
+  const createChat = async () => {
+    try {
+      const access = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+      if (!access) return
+      const res = await fetch(`${API_BASE}/chat/create`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${access}` }, body: JSON.stringify({ title: 'New Chat' }) })
+      if (!res.ok) return
+      const d = await res.json()
+      await fetchChats()
+      setSelectedChat(d.id)
+      setChatMessages([])
+    } catch (e) {}
+  }
+
+  const fetchChatMessages = async (cid: number) => {
+    try {
+      const access = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+      if (!access) return
+      const res = await fetch(`${API_BASE}/chat/${cid}/messages`, { headers: { Authorization: `Bearer ${access}` } })
+      if (!res.ok) return
+      const d = await res.json()
+      setChatMessages(d.items || [])
+    } catch (e) {}
+  }
+
+  const sendChatMessage = async () => {
+    if (!selectedChat || !chatInput.trim()) return
+    try {
+      // Optimistically add user message
+      const tempId = `tmp-${Date.now()}`
+      const userMsg = { id: tempId, chat_id: selectedChat, role: 'user', content: chatInput, created_at: Math.floor(Date.now()/1000) }
+      setChatMessages((s) => [...s, userMsg])
+
+      // Determine mode and context
+      let mode = 'chat'
+      let context: string | undefined
+      if (activeTab === 'generate' && mermaidCode) { mode = 'mermaid'; context = mermaidCode }
+      else if (activeTab === 'process' && docText) { mode = 'doc'; context = docText }
+
+      await streamChatMessage(selectedChat, chatInput, mode, context)
+      setChatInput('')
+    } catch (e) {}
+  }
+
+  const streamChatMessage = async (chatId: number, content: string, mode: string = 'chat', context?: string) => {
+    try {
+      const access = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (access) headers['Authorization'] = `Bearer ${access}`
+      const res = await fetch(`${API_BASE}/chat/${chatId}/stream`, { method: 'POST', headers, body: JSON.stringify({ content, mode, context }) })
+      if (!res.ok || !res.body) return
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      // create assistant placeholder
+      const assistantTempId = `tmp-assistant-${Date.now()}`
+      setChatMessages((s) => [...s, { id: assistantTempId, chat_id: chatId, role: 'assistant', content: '', created_at: Math.floor(Date.now()/1000) }])
+      let done = false
+      while (!done) {
+        const { value, done: readerDone } = await reader.read()
+        done = !!readerDone
+        if (value) {
+          const chunk = decoder.decode(value)
+          // append chunk to last assistant message
+          setChatMessages((prev) => prev.map((m) => m.id === assistantTempId ? ({ ...m, content: m.content + chunk }) : m))
+        }
+      }
+      // stream complete — fetch messages to get canonical saved messages
+      await fetchChatMessages(chatId)
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  const editChatMessage = async (msg: any) => {
+    const newContent = prompt('Edit message', msg.content)
+    if (newContent === null) return
+    try {
+      const access = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+      if (!access) return
+      const res = await fetch(`${API_BASE}/chat/${msg.chat_id}/message/${msg.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${access}` }, body: JSON.stringify({ content: newContent, regenerate: true }) })
+      if (!res.ok) return
+      await fetchChatMessages(msg.chat_id)
+    } catch (e) {}
+  }
+
+  // AI repair calls
+  const callAiRepairMermaid = async (content: string, autosaveAfter: boolean = false) => {
+    try {
+      setMermaidAiLoading(true)
+      const access = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (access) headers['Authorization'] = `Bearer ${access}`
+  const res = await fetch(`${API_BASE}/ai/mermaid/repair`, { method: 'POST', headers, body: JSON.stringify({ content }) })
+      setMermaidAiLoading(false)
+      if (!res.ok) return
+      const d = await res.json()
+      if (d.mermaid) {
+        setMermaidCode(d.mermaid)
+        if (autosaveAfter) {
+          // persist via autosave AI endpoint
+          const headers2: Record<string, string> = { 'Content-Type': 'application/json' }
+          if (access) headers2['Authorization'] = `Bearer ${access}`
+          const r2 = await fetch(`${API_BASE}/ai/mermaid/autosave`, { method: 'POST', headers: headers2, body: JSON.stringify({ content: d.mermaid, id: mermaidAutosaveId }) })
+          if (r2.ok) {
+            const d2 = await r2.json()
+            if (d2.id) setMermaidAutosaveId(d2.id)
+            fetchHistory()
+          }
+        }
+      }
+    } catch (e) {
+      setMermaidAiLoading(false)
+    }
+  }
+
+  const callAiRepairDoc = async (content: string, autosaveAfter: boolean = false) => {
+    try {
+      setDocAiLoading(true)
+      const access = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (access) headers['Authorization'] = `Bearer ${access}`
+  const res = await fetch(`${API_BASE}/ai/doc/repair`, { method: 'POST', headers, body: JSON.stringify({ content }) })
+      setDocAiLoading(false)
+      if (!res.ok) return
+      const d = await res.json()
+      if (d.content) {
+        setDocText(d.content)
+        if (autosaveAfter) {
+          const headers2: Record<string, string> = { 'Content-Type': 'application/json' }
+          if (access) headers2['Authorization'] = `Bearer ${access}`
+          const r2 = await fetch(`${API_BASE}/ai/doc/autosave`, { method: 'POST', headers: headers2, body: JSON.stringify({ content: d.content, id: docAutosaveId }) })
+          if (r2.ok) {
+            const d2 = await r2.json()
+            if (d2.id) setDocAutosaveId(d2.id)
+            fetchHistory()
+          }
+        }
+      }
+    } catch (e) {
+      setDocAiLoading(false)
     }
   }
 
@@ -352,7 +634,7 @@ export default function HelloPage() {
             {activeTab === 'generate' && mermaidCode && (
               <div className="mt-4">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Edit Generated Flowchart (Mermaid)</label>
-                <textarea rows={8} className="w-full rounded-lg border border-white/10 dark:border-black/20 p-3 font-mono text-xs bg-white/20 dark:bg-black/20 text-gray-900 dark:text-gray-100" value={mermaidCode} onChange={(e) => setMermaidCode(e.target.value)} />
+                <textarea rows={8} className="w-full rounded-lg border border-white/10 dark:border-black/20 p-3 font-mono text-xs bg-white/20 dark:bg-black/20 text-gray-900 dark:text-gray-100" value={mermaidCode} onChange={(e) => handleMermaidChange(e.target.value)} />
               </div>
             )}
 
@@ -390,6 +672,96 @@ export default function HelloPage() {
                     <button onClick={downloadDocx} className="inline-flex items-center gap-2 py-2 px-3 bg-indigo-600 text-white rounded-md shadow"> <Download className="h-4 w-4" /> Download</button>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Document history */}
+            <div className="bg-white/70 dark:bg-gray-900/50 border border-white/10 dark:border-black/20 rounded-lg p-3 shadow-sm mt-3">
+              <h4 className="text-sm font-medium">History</h4>
+              <div className="mt-2 max-h-40 overflow-y-auto space-y-2">
+                {historyItems.length === 0 && <div className="text-xs text-gray-500">No saved items</div>}
+                {historyItems.map((h) => (
+                  <div key={h.id} className="p-2 rounded-md bg-white/30 dark:bg-black/20 flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium">{h.title}</div>
+                      <div className="text-xs text-gray-500">{h.type} • {new Date(h.updated_at*1000).toLocaleString()}</div>
+                    </div>
+                    <div className="ml-2 flex items-center gap-2">
+                      <button onClick={async () => {
+                        // load into editor
+                        if (h.type === 'mermaid') {
+                          // fetch entry detail
+                          const access = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+                          if (!access) return
+                          const res = await fetch(`${API_BASE}/history/${h.id}`, { headers: { Authorization: `Bearer ${access}` } })
+                          if (!res.ok) return
+                          const d = await res.json()
+                          setMermaidCode(d.item.content || '')
+                          setMermaidAutosaveId(d.item.id)
+                        } else {
+                          // docx or other — attempt to fetch preview and load text
+                          const access = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+                          if (!access) return
+                          const res = await fetch(`${API_BASE}/history/${h.id}`, { headers: { Authorization: `Bearer ${access}` } })
+                          if (!res.ok) return
+                          const d = await res.json()
+                          // content may be a path to static docx
+                          if (d.item && d.item.content && d.item.content.startsWith('/')) {
+                            const preview = makeAbsoluteUrl(d.item.content)
+                            if (preview) {
+                              await fetchPreviewText(preview)
+                              setDocAutosaveId(d.item.id)
+                            }
+                          } else {
+                            setDocText(d.item.content || '')
+                            setDocAutosaveId(d.item.id)
+                          }
+                        }
+                      }} className="text-xs text-indigo-600">Load</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Chat panel */}
+            <div className="bg-white/70 dark:bg-gray-900/50 border border-white/10 dark:border-black/20 rounded-lg p-3 shadow-sm mt-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium">Chat</h4>
+                <button onClick={createChat} className="text-xs text-indigo-600">New</button>
+              </div>
+              <div className="mt-2 max-h-40 overflow-y-auto">
+                <div className="space-y-2">
+                  {chats.map(c => (
+                    <div key={c.id} onClick={() => { setSelectedChat(c.id); fetchChatMessages(c.id) }} className={`p-2 rounded-md cursor-pointer ${selectedChat===c.id ? 'bg-indigo-50 dark:bg-indigo-900/20':'bg-white/10'}`}>
+                      <div className="text-sm font-medium">{c.title}</div>
+                      <div className="text-xs text-gray-500">{new Date(c.updated_at*1000).toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-2 border-t pt-2">
+                <div className="max-h-40 overflow-y-auto p-1 space-y-2">
+                  {chatMessages.map(m => (
+                    <div key={m.id} className={`p-2 rounded ${m.role==='user' ? 'bg-indigo-50 text-gray-900':'bg-gray-100 dark:bg-gray-800 text-gray-900'}`}>
+                      <div className="text-xs whitespace-pre-wrap">{m.content}</div>
+                      {m.role === 'user' && <div className="text-xs text-gray-400 mt-1"><button onClick={() => editChatMessage(m)} className="underline">Edit</button></div>}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <input value={chatInput} onChange={(e) => setChatInput(e.target.value)} className="flex-1 rounded border border-gray-200 dark:border-gray-700 p-1 bg-white/90 dark:bg-gray-800 text-sm" />
+                  <button onClick={sendChatMessage} className="px-3 py-1 bg-indigo-600 text-white rounded text-sm">Send</button>
+                </div>
+              </div>
+            </div>
+
+            {/* Doc text editor for quick edits and autosave */}
+            {docxUrl && (
+              <div className="mt-3 bg-white/70 dark:bg-gray-900/50 border border-white/10 dark:border-black/20 rounded-lg p-3 shadow-sm">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Document Text (editable)</label>
+                <textarea rows={8} value={docText} onChange={(e) => handleDocTextChange(e.target.value)} className="w-full mt-2 rounded border p-3 bg-white/20 dark:bg-black/20 text-sm" />
+                <p className="text-xs text-gray-500 mt-2">Edits are autosaved to your history.</p>
               </div>
             )}
 

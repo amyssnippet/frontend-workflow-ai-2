@@ -95,6 +95,30 @@ def init_db():
         FOREIGN KEY(user_id) REFERENCES users(id)
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS chats (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER,
+        title TEXT,
+        created_at INTEGER,
+        updated_at INTEGER,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS chat_messages (
+        id INTEGER PRIMARY KEY,
+        chat_id INTEGER,
+        user_id INTEGER,
+        role TEXT,
+        content TEXT,
+        created_at INTEGER,
+        updated_at INTEGER,
+        edited INTEGER DEFAULT 0,
+        FOREIGN KEY(chat_id) REFERENCES chats(id),
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    )
+    """)
     conn.commit()
     conn.close()
     # Attempt to add email verification columns to users table if they don't exist
@@ -353,6 +377,91 @@ def save_history(user_id: int, htype: str, title: str, content: str) -> int:
     hid = cur.lastrowid
     conn.close()
     return hid
+
+
+def create_chat(user_id: int, title: str = None) -> int:
+    now = int(time.time())
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute('INSERT INTO chats (user_id, title, created_at, updated_at) VALUES (?,?,?,?)', (user_id, title or 'New chat', now, now))
+    conn.commit()
+    cid = cur.lastrowid
+    conn.close()
+    return cid
+
+
+def list_chats_for_user(user_id: int):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute('SELECT id, title, created_at, updated_at FROM chats WHERE user_id = ? ORDER BY updated_at DESC', (user_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def add_chat_message(chat_id: int, user_id: int, role: str, content: str) -> int:
+    now = int(time.time())
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute('INSERT INTO chat_messages (chat_id, user_id, role, content, created_at, updated_at) VALUES (?,?,?,?,?,?)', (chat_id, user_id, role, content, now, now))
+    conn.commit()
+    mid = cur.lastrowid
+    # update chat timestamp
+    cur.execute('UPDATE chats SET updated_at = ? WHERE id = ?', (now, chat_id))
+    conn.commit()
+    conn.close()
+    return mid
+
+
+def list_chat_messages(chat_id: int, limit: int = 200):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute('SELECT id, chat_id, user_id, role, content, created_at, updated_at, edited FROM chat_messages WHERE chat_id = ? ORDER BY created_at ASC LIMIT ?', (chat_id, limit))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_chat_message(msg_id: int):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM chat_messages WHERE id = ?', (msg_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def edit_chat_message_db(msg_id: int, user_id: int, new_content: str) -> bool:
+    now = int(time.time())
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute('UPDATE chat_messages SET content = ?, edited = 1, updated_at = ? WHERE id = ? AND user_id = ?', (new_content, now, msg_id, user_id))
+    conn.commit()
+    changed = cur.rowcount
+    conn.close()
+    return changed > 0
+
+
+def delete_assistant_messages_after(chat_id: int, after_created_at: int):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute('DELETE FROM chat_messages WHERE chat_id = ? AND role = ? AND created_at > ?', (chat_id, 'assistant', after_created_at))
+    conn.commit()
+    conn.close()
+
+
+def call_ollama_chat(messages: List[Dict]) -> str:
+    """Send messages (list of {role, content}) to the Ollama chat endpoint and return assistant reply text."""
+    try:
+        payload = {"model": OLLAMA_MODEL, "messages": messages, "stream": False}
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
+        response = requests.post(OLLAMA_API_URL, headers=headers, data=json.dumps(payload), timeout=120)
+        response.raise_for_status()
+        result = response.json()
+        return result.get("message", {}).get("content", "").strip()
+    except Exception as e:
+        print(f"Error calling Ollama chat: {e}")
+        return ""
 
 
 def update_history_entry(entry_id: int, user_id: int, title: Optional[str], content: Optional[str]) -> bool:
@@ -1170,6 +1279,205 @@ async def signup(payload: Dict = Body(...)):
         raise HTTPException(status_code=400, detail='User with that username or email already exists')
 
 
+@app.post('/chat/create')
+async def chat_create(request: Request, payload: Dict = Body(...)):
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=401, detail='Authorization required')
+    title = payload.get('title') or 'New chat'
+    cid = create_chat(user['id'], title)
+    return {'id': cid}
+
+
+@app.get('/chat/list')
+async def chat_list(request: Request):
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=401, detail='Authorization required')
+    items = list_chats_for_user(user['id'])
+    return {'items': items}
+
+
+@app.get('/chat/{chat_id}/messages')
+async def chat_messages(chat_id: int, request: Request):
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=401, detail='Authorization required')
+    # verify chat ownership
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM chats WHERE id = ? AND user_id = ?', (chat_id, user['id']))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail='Chat not found')
+    msgs = list_chat_messages(chat_id)
+    return {'items': msgs}
+
+
+@app.post('/chat/{chat_id}/message')
+async def chat_send_message(chat_id: int, request: Request, payload: Dict = Body(...)):
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=401, detail='Authorization required')
+    role = payload.get('role') or 'user'
+    content = payload.get('content') or ''
+    if not content:
+        raise HTTPException(status_code=400, detail='content required')
+    # verify chat ownership
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM chats WHERE id = ? AND user_id = ?', (chat_id, user['id']))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail='Chat not found')
+
+    # save user message
+    msg_id = add_chat_message(chat_id, user['id'], role, content)
+
+    # If user message, call Ollama with recent context to get assistant reply
+    assistant_text = ''
+    if role == 'user':
+        msgs = list_chat_messages(chat_id, limit=100)
+        # build messages for Ollama
+        ol_messages = []
+        for m in msgs:
+            # map local roles to chat roles
+            ol_messages.append({'role': m['role'], 'content': m['content']})
+        assistant_text = call_ollama_chat(ol_messages)
+        if assistant_text:
+            add_chat_message(chat_id, None, 'assistant', assistant_text)
+
+    return {'user_message_id': msg_id, 'assistant': assistant_text}
+
+
+@app.post('/chat/{chat_id}/stream')
+async def chat_stream(chat_id: int, request: Request):
+    """Stream assistant response for a newly posted user message.
+
+    Accepts JSON body: { content: str, mode?: 'chat'|'mermaid'|'doc', context?: str }
+    Returns a chunked text/plain response (stream) with incremental assistant text.
+    """
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=401, detail='Authorization required')
+    payload = await request.json()
+    content = payload.get('content') or ''
+    mode = payload.get('mode') or 'chat'
+    context = payload.get('context')
+    if not content:
+        raise HTTPException(status_code=400, detail='content required')
+
+    # verify chat ownership
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute('SELECT * FROM chats WHERE id = ? AND user_id = ?', (chat_id, user['id']))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail='Chat not found')
+
+    # save user message
+    user_msg_id = add_chat_message(chat_id, user['id'], 'user', content)
+
+    async def event_stream():
+        try:
+            # Build model input using recent chat history
+            msgs = list_chat_messages(chat_id, limit=200)
+            model_messages = []
+            for m in msgs:
+                # include system/context messages if present in DB
+                model_messages.append({'role': m['role'], 'content': m['content']})
+
+            # append the new user content
+            model_messages.append({'role': 'user', 'content': content})
+
+            # If explicit context provided (mermaid or doc), add a system instruction
+            if mode == 'mermaid':
+                # Use specialized mermaid generator
+                prompt_text = content
+                if context:
+                    prompt_text = f"Context:\n{context}\n\nUser: {content}"
+                reply = call_ollama_granite(prompt_text)
+            elif mode == 'doc':
+                system = "You are an editor. Improve and rewrite the provided document text when asked. Return only the improved text."
+                model_messages.insert(0, {'role': 'system', 'content': system})
+                reply = call_ollama_chat(model_messages)
+            else:
+                reply = call_ollama_chat(model_messages)
+
+            # Stream reply in chunks
+            chunk_size = 128
+            for i in range(0, len(reply), chunk_size):
+                chunk = reply[i:i+chunk_size]
+                yield chunk
+                # small pause to simulate streaming
+                await asyncio.sleep(0.01)
+
+            # Save assistant message once complete
+            add_chat_message(chat_id, None, 'assistant', reply)
+        except Exception as e:
+            yield f"[ERROR] {str(e)}"
+
+    return StreamingResponse(event_stream(), media_type='text/plain; charset=utf-8')
+
+
+@app.put('/chat/{chat_id}/message/{msg_id}')
+async def chat_edit_message(chat_id: int, msg_id: int, request: Request, payload: Dict = Body(...)):
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=401, detail='Authorization required')
+    new_content = payload.get('content')
+    if new_content is None:
+        raise HTTPException(status_code=400, detail='content required')
+    regenerate = payload.get('regenerate', False)
+    # verify message exists and belongs to user
+    msg = get_chat_message(msg_id)
+    if not msg or msg['chat_id'] != chat_id:
+        raise HTTPException(status_code=404, detail='Message not found')
+    if msg['user_id'] != user['id']:
+        raise HTTPException(status_code=403, detail='Cannot edit this message')
+    ok = edit_chat_message_db(msg_id, user['id'], new_content)
+    if not ok:
+        raise HTTPException(status_code=500, detail='Failed to edit message')
+
+    assistant_text = None
+    if regenerate and msg['role'] == 'user':
+        # delete assistant messages after this message timestamp
+        after_created = msg['created_at']
+        delete_assistant_messages_after(chat_id, after_created)
+        # build messages up to this edited message
+        msgs = list_chat_messages(chat_id, limit=200)
+        ol_messages = []
+        for m in msgs:
+            ol_messages.append({'role': m['role'], 'content': m['content']})
+        assistant_text = call_ollama_chat(ol_messages)
+        if assistant_text:
+            add_chat_message(chat_id, None, 'assistant', assistant_text)
+
+    return {'edited': True, 'assistant': assistant_text}
+
+
+@app.delete('/chat/{chat_id}/message/{msg_id}')
+async def chat_delete_message(chat_id: int, msg_id: int, request: Request):
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=401, detail='Authorization required')
+    # only allow user to delete their own messages
+    msg = get_chat_message(msg_id)
+    if not msg or msg['chat_id'] != chat_id:
+        raise HTTPException(status_code=404, detail='Message not found')
+    if msg['user_id'] != user['id']:
+        raise HTTPException(status_code=403, detail='Cannot delete this message')
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute('DELETE FROM chat_messages WHERE id = ? AND user_id = ?', (msg_id, user['id']))
+    conn.commit()
+    conn.close()
+    return {'deleted': True}
+
+
 @app.post('/signin')
 async def signin(payload: Dict = Body(...)):
     identifier = payload.get('identifier') or payload.get('username') or payload.get('email')
@@ -1421,3 +1729,101 @@ async def autosave(request: Request, payload: Dict = Body(...)):
     else:
         hid = save_history(user['id'], htype, title or f'Autosave {int(time.time())}', content)
         return {'id': hid, 'created': True}
+
+
+@app.post('/ai/mermaid/repair')
+async def ai_repair_mermaid(payload: Dict = Body(...)):
+    """Takes mermaid code and returns repaired/normalized mermaid."""
+    code = payload.get('content') or ''
+    mode = payload.get('mode') or 'repair'
+    if not code:
+        raise HTTPException(status_code=400, detail='content required')
+    try:
+        # Use the existing repair helper which asks the model to return valid mermaid
+        repaired = repair_mermaid_with_ollama(code)
+        repaired = sanitize_mermaid_code(repaired)
+        return {'mermaid': repaired}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post('/ai/mermaid/autosave')
+async def ai_mermaid_autosave(request: Request, payload: Dict = Body(...)):
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=401, detail='Authorization required')
+    code = payload.get('content') or ''
+    entry_id = payload.get('id')
+    title = payload.get('title') or f'AI repaired mermaid {int(time.time())}'
+    if not code:
+        raise HTTPException(status_code=400, detail='content required')
+    try:
+        repaired = repair_mermaid_with_ollama(code)
+        repaired = sanitize_mermaid_code(repaired)
+        if entry_id:
+            ok = update_history_entry(int(entry_id), user['id'], title, repaired)
+            if not ok:
+                # fallback to create
+                hid = save_history(user['id'], 'mermaid', title, repaired)
+                return {'id': hid, 'created': True, 'mermaid': repaired}
+            return {'id': entry_id, 'updated': True, 'mermaid': repaired}
+        else:
+            hid = save_history(user['id'], 'mermaid', title, repaired)
+            return {'id': hid, 'created': True, 'mermaid': repaired}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post('/ai/doc/repair')
+async def ai_repair_doc(payload: Dict = Body(...)):
+    """Accepts plain text of a document and returns an improved/cleaned text version."""
+    content = payload.get('content') or ''
+    mode = payload.get('mode') or 'improve'
+    if not content:
+        raise HTTPException(status_code=400, detail='content required')
+    try:
+        system = (
+            "You are a helpful editor. Improve the clarity, grammar, and formatting of the provided document text. "
+            "Preserve meaning but make the text cleaner and more concise. Return only the improved document text without additional commentary."
+        )
+        messages = [
+            {'role': 'system', 'content': system},
+            {'role': 'user', 'content': content}
+        ]
+        improved = call_ollama_chat(messages)
+        return {'content': improved}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post('/ai/doc/autosave')
+async def ai_doc_autosave(request: Request, payload: Dict = Body(...)):
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=401, detail='Authorization required')
+    content = payload.get('content') or ''
+    entry_id = payload.get('id')
+    title = payload.get('title') or f'AI edited doc {int(time.time())}'
+    if not content:
+        raise HTTPException(status_code=400, detail='content required')
+    try:
+        system = (
+            "You are a helpful editor. Improve the clarity, grammar, and formatting of the provided document text. "
+            "Preserve meaning but make the text cleaner and more concise. Return only the improved document text without additional commentary."
+        )
+        messages = [
+            {'role': 'system', 'content': system},
+            {'role': 'user', 'content': content}
+        ]
+        improved = call_ollama_chat(messages)
+        if entry_id:
+            ok = update_history_entry(int(entry_id), user['id'], title, improved)
+            if not ok:
+                hid = save_history(user['id'], 'docx', title, improved)
+                return {'id': hid, 'created': True, 'content': improved}
+            return {'id': entry_id, 'updated': True, 'content': improved}
+        else:
+            hid = save_history(user['id'], 'docx', title, improved)
+            return {'id': hid, 'created': True, 'content': improved}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
