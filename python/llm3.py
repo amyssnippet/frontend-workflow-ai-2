@@ -533,20 +533,26 @@ def repair_mermaid_with_ollama(broken_code: str) -> str:
 def translate_mermaid_to_image(mermaid_code: str, output_filename: str, output_format="png") -> tuple:
     if not check_mmdc_installed():
         return False, "Mermaid CLI not found"
-
+    
     temp_mermaid_file = "temp.mmd"
     output_path = f"static/{output_filename}.{output_format}"
-
+    puppeteer_config = os.path.expanduser("~/.config/mermaid/puppeteer-config.json")
+    
     try:
         with open(temp_mermaid_file, "w", encoding="utf-8") as f:
             f.write(mermaid_code)
-
-        mmdc_path = r"/root/.volta/bin/mmdc"
-
-        subprocess.run([mmdc_path, "-i", temp_mermaid_file, "-o", output_path], check=True)
+        
+        mmdc_path = "/root/.volta/bin/mmdc"
+        cmd = [mmdc_path, "-i", temp_mermaid_file, "-o", output_path]
+        
+        # Add puppeteer config if file exists
+        if os.path.exists(puppeteer_config):
+            cmd.extend(["-p", puppeteer_config])
+        
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
         return True, output_path
     except subprocess.CalledProcessError as e:
-        return False, f"mmdc parse error: {e}"
+        return False, f"mmdc error: {e.stderr}"
     except Exception as e:
         return False, str(e)
     finally:
