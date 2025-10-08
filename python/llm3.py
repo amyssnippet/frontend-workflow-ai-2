@@ -431,8 +431,7 @@ async def shutdown_event():
 
 def check_mmdc_installed():
     try:
-        
-        mmdc_path = r"mmdc"
+        mmdc_path = r"/root/.volta/bin/mmdc"
         subprocess.run([mmdc_path, "--version"], check=True, capture_output=True)
         return True
     except (FileNotFoundError, subprocess.CalledProcessError):
@@ -542,7 +541,7 @@ def translate_mermaid_to_image(mermaid_code: str, output_filename: str, output_f
         with open(temp_mermaid_file, "w", encoding="utf-8") as f:
             f.write(mermaid_code)
 
-        mmdc_path = r"mmdc"
+        mmdc_path = r"/root/.volta/bin/mmdc"
 
         subprocess.run([mmdc_path, "-i", temp_mermaid_file, "-o", output_path], check=True)
         return True, output_path
