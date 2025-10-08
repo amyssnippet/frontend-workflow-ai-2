@@ -541,9 +541,9 @@ def translate_mermaid_to_image(mermaid_code: str, output_filename: str, output_f
     try:
         with open(temp_mermaid_file, "w", encoding="utf-8") as f:
             f.write(mermaid_code)
-        
+        puppeteer_config = "/root/.config/mermaid/puppeteer-config.json"
         mmdc_path = "/root/.volta/bin/mmdc"
-        cmd = [mmdc_path, "-i", temp_mermaid_file, "-o", output_path]
+        cmd = [mmdc_path, "-i", temp_mermaid_file, "-o", output_path, "-p", puppeteer_config]
         
         # Add puppeteer config if file exists
         if os.path.exists(puppeteer_config):
